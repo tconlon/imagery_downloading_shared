@@ -35,7 +35,7 @@ def find_images(tile):
     tile_dict = {}
 
 
-    valid_images = index_csv.loc[(index_csv['MGRS_TILE'] == tile) ]
+    valid_images = index_csv.loc[(index_csv['MGRS_TILE'] == tile) & (index_csv['TOTAL_SIZE'] > 750000000)]
 
     for index, row in valid_images.iterrows():
         if row['GRANULE_ID'][0:3] != 'L1C':
