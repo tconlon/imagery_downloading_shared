@@ -10,7 +10,7 @@ import pickle
 import rasterio
 from rasterio.warp import reproject, Resampling
 from utils import trim_index_csv
-
+from retrying import retry
 
 import datetime
 from dateutil.rrule import rrule, MONTHLY
@@ -18,12 +18,10 @@ from dateutil.rrule import rrule, MONTHLY
 
 # @retry(wait_exponential_multiplier=1000, wait_exponential_max=10000)
 
-
 os.environ['GDAL_DATA'] = '/anaconda3/envs/gis/share/gdal'
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/Users/terenceconlon/Google Authentication/elec-vis-8f629093a79a.json'
 fiona.drvsupport.supported_drivers['gml'] = 'rw'
 fiona.drvsupport.supported_drivers['GML'] = 'rw'
-
 
 
 def find_images(tile):
@@ -231,8 +229,10 @@ if __name__ == '__main__':
 
     image_list = load_images_within_date_range(tile)
 
+    print(image_list)
 
-    if parallel:
-        parallelism = 1  # Try with 4 to see if it crashes; 6 is too high
-        thread_pool = ThreadPool(parallelism)
-        thread_pool.map(parallel_download, image_list)
+    #
+    # if parallel:
+    #     parallelism = 1  # Try with 4 to see if it crashes; 6 is too high
+    #     thread_pool = ThreadPool(parallelism)
+    #     thread_pool.map(parallel_download, image_list)
