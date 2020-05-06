@@ -1,4 +1,4 @@
-name: image_dl
+name: gis
 channels:
 - anaconda
 - conda-forge
