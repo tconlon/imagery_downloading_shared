@@ -1,9 +1,9 @@
-name: gis
+name: image_dl
 channels:
 - anaconda
 - conda-forge
 dependencies:
-- python=3.6 # try 3.6 matplotlib and rasterio only work together in python 3.5
+- python=3.6
 - matplotlib
 - rasterio
 - numpy
@@ -17,5 +17,5 @@ dependencies:
 - keras
 - seaborn
 - scikit-learn
-#- pip:
- #must be installed with conda, conda install -c conda-forge rasterio
+- google-cloud-storage
+
