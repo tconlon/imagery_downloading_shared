@@ -3,11 +3,14 @@ import fiona
 import glob
 import rasterio
 from rasterio.mask import mask
+from rasterio import Affine
 import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from utils import *
 
 def download_images_and_cloud_masks(gs_tuple):
+    # gs_tuple contains information about the image url, the image size, cloud cover, and the ingestion date
+
     tile_name = gs_tuple[-1].split('_')[-2]
     tile_folder_base = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles'
     tile_folder = os.path.join(tile_folder_base, tile_name)
@@ -17,22 +20,26 @@ def download_images_and_cloud_masks(gs_tuple):
 
     print('Downloading Tile: {}'.format(gs_tuple[-1]))
 
+    # Download BGR + NIR bands for EVI calculation
     valid_bands = ['B02', 'B03', 'B04', 'B08']
 
+    # Find a list of images that are available within the image folder
     cmd_string = '/Users/terenceconlon/google-cloud-sdk/bin/gsutil ls -r ' + gs_tuple[-1] + '/GRANULE'
     image_list_output = subprocess.Popen(cmd_string, shell=True, stdout=subprocess.PIPE)
     image_list_clean = [j.decode('utf-8') for j in image_list_output.stdout.readlines()]
-
     image_list_output.kill()
 
+    # Collect the valid images and cloud cover shape files
     jp2_list = sorted([j.replace('\n', '') for j in image_list_clean if '.jp2' in j])
     jp2_band_list = sorted([i for i in jp2_list if i.split('_')[-1][0:3] in valid_bands])
     cloud_cover_gml = [j.replace('\n', '') for j in image_list_clean if 'CLOUDS' in j][0]
 
+    # Extract temporal information
     year = jp2_band_list[0].split('_')[-2][0:4]
     month = jp2_band_list[0].split('_')[-2][4:6]
     day = jp2_band_list[0].split('_')[-2][6:8]
 
+    # Create directories to store the imagery/cloud cover shapefile
     dir_folder, cloud_folder = create_dirs(tile_folder_base, tile_name, year, month, valid_bands)
 
     bucket_name = 'gcp-public-data-sentinel-2'
@@ -48,6 +55,8 @@ def download_images_and_cloud_masks(gs_tuple):
         dest = os.path.join(dir_folder, band_dir, out_filename)
         dest_filename_list.append(dest)
 
+        # Download images to corresponding folders.
+        # Note: this download process changes the file extension from .jp2 to .tif
         download_blob(bucket_name, in_filename, dest)
 
 
@@ -57,19 +66,23 @@ def download_images_and_cloud_masks(gs_tuple):
     cloud_dest = os.path.join(cloud_folder,
                               'cloud_cover_polygons_{}{}{}.shp'.format(year, month, day))
 
+    # Download cloud cover shapefile to corresponding folder.
+    # Note: this download process changes the file extension from .gml to .shp
     download_blob(bucket_name, cloud_infile_name, cloud_dest)
 
 
 def create_evi_imgs(tile_name):
 
-    nodata_val = 32767
-    year_dirs, month_dirs, band_dirs = list_folders(tile_name)
 
+    nodata_val = 32767
+
+    # Extract folders for the tile
+    year_dirs, month_dirs, band_dirs = list_folders(tile_name)
 
 
     for dir in month_dirs:
 
-
+        # Find images and cloud cover shapefiles in the returned folders
         band_dir_subset = [x for x in band_dirs if dir in x]
         band_dir_img_subset = sorted([x for x in band_dir_subset if x[-3] == 'B'])
         cloud_cover_dir = [x for x in band_dir_subset if x.split('/')[-1] == 'cloud_cover'][0]
@@ -79,25 +92,29 @@ def create_evi_imgs(tile_name):
         if not os.path.exists(evi_folder_path):
             os.mkdir(evi_folder_path)
 
-
+        # Collect lists of the images by band
         band_02_images = sorted(glob.glob(band_dir_img_subset[0] + '/*.tif'))
         band_04_images = sorted(glob.glob(band_dir_img_subset[2] + '/*.tif'))
         band_08_images = sorted(glob.glob(band_dir_img_subset[3] + '/*.tif'))
 
+        # Make sure that there are the correct number of images
         assert len(band_02_images) == len(band_04_images) and len(band_02_images) == len(band_08_images)
 
 
         for i in range(len(band_02_images)):
 
             print('Calculating EVI for {}'.format(band_02_images[i]))
-
+            # Extract image date
             img_date = band_02_images[i].split('_')[-2][0:8]
 
+            # Extract cloud cover shape file
             cloud_cover_shp_name = [j for j in cloud_cover_imgs if img_date in j]
 
+            # Establish out file name
             evi_filename = band_02_images[i].split('/')[-1].replace('B02.tif', 'EVI.tif')
             evi_save_file = os.path.join(evi_folder_path, evi_filename)
 
+            # Read in the images for bands 2,4,8 to create an EVI layer. Crop out the cloud covered pixels
             with rasterio.open(band_02_images[i], 'r') as band2_src:
                 evi_meta = copy.copy(band2_src.meta)
 
@@ -127,7 +144,7 @@ def create_evi_imgs(tile_name):
                                       np.count_nonzero(band_04_cropped == 0),
                                       np.count_nonzero(band_08_cropped == 0)])
 
-
+            # Replace the non-valued pixels with np.nan if there are a large portion of them. Allows for interpolation.
             if max_zero_values > (0.05 * band_02_cropped.shape[1] * band_02_cropped.shape[2]):
                 print('Replacing bad values for partial images')
                 print(img_date)
@@ -136,6 +153,7 @@ def create_evi_imgs(tile_name):
                 band_04_cropped = np.where(band_04_cropped == 0, np.nan, band_04_cropped)
                 band_08_cropped = np.where(band_08_cropped == 0, np.nan, band_08_cropped)
 
+            # Call the EVI layer creation function
             EVI = convert_to_float_and_evi_func(band_02_cropped, band_04_cropped,
                                                 band_08_cropped, nodata_val)
 
@@ -143,14 +161,14 @@ def create_evi_imgs(tile_name):
         evi_meta['nodata'] = 'nan'
         evi_meta['driver'] = 'GTiff'
 
-
+        # Save the evi layer.
         with rasterio.open(evi_save_file, 'w', **evi_meta) as evi_out:
             evi_out.write(EVI)
 
 def convert_to_float_and_evi_func(band_02_array, band_04_array, band_08_array, nodata_val):
     ## Implementing MODIS-EVI algorithm
 
-    # First convert to floats
+    # First convert to floats and scale
     band_02_array = np.float32(band_02_array)/10000
     band_04_array = np.float32(band_04_array)/10000
     band_08_array = np.float32(band_08_array)/10000
@@ -178,23 +196,25 @@ def convert_to_float_and_evi_func(band_02_array, band_04_array, band_08_array, n
 
 def stack_images(tile_name, band_name, strt_dt, end_dt):
 
-
+    # Find all year, month pairs in the date range
     date_tuples = [(dt.year, dt.month) for dt in rrule(MONTHLY, dtstart=strt_dt, until=end_dt)]
 
-
+    # Create a folder to hold the stacked images
     median_img_folder = os.path.join('/Volumes/sel_external/sentinel_imagery/reprojected_tiles/',tile_name)
     stacks_folder = os.path.join(median_img_folder, 'stacks')
     if not os.path.exists(stacks_folder):
         os.mkdir(stacks_folder)
 
+    # Load all the tifs and sort by date in ascending order
     all_tifs = sorted(glob.glob(median_img_folder + '/**/*{}.tif'.format(band_name), recursive=True))
 
     print('Number of images to stack: {}'.format(len(all_tifs)))
-    print(len(all_tifs))
 
+    # Create an out file
     out_file = os.path.join(stacks_folder, '{}_stack_{}_10m.tif'.format(
                 tile_name, band_name))
 
+    # Create a empty array to store stacked image
     stacked_evi = np.full((36, 10980, 10980), np.nan, dtype=np.float32)
 
     for tif in all_tifs:
@@ -202,6 +222,8 @@ def stack_images(tile_name, band_name, strt_dt, end_dt):
             year = int(tif.split('_')[-2][0:4])
             month = int(tif.split('_')[-2][4:6])
 
+            # Load image and insert at the correct index based on date -- not necessarily the index of the file name
+            # in the all_tifs list
             index_list = [i == (year, month) for i in date_tuples]
             index = np.argwhere(index_list)[0][0]
 
@@ -211,7 +233,7 @@ def stack_images(tile_name, band_name, strt_dt, end_dt):
 
             stacked_evi[index, :, :] = evi_src.read()
 
-
+    # Save stacked image
     print('Writing stacked image')
     meta = evi_src.meta.copy()
     meta['count'] = 36
@@ -221,6 +243,7 @@ def stack_images(tile_name, band_name, strt_dt, end_dt):
 
 def downsample_stack(in_file, ds_factor):
 
+    # Downsample stack. Usually only used with the 10m file as input, but this can be changed too
     out_file = in_file.replace('_10m.tif','_{}m.tif'.format(ds_factor*10))
 
     with rasterio.open(in_file, 'r') as evi_src:
@@ -249,21 +272,28 @@ def infill_change_dtype(in_file):
         img_meta = img_src.meta
         img_array = img_src.read()
         print('Infilling')
+        # Call infilling function
         img_array = missing_vals_infill(img_array)
 
+    # Change data type to take up less storage
     img_array = img_array.astype(np.uint16)
     img_meta.update({'dtype':'uint16'})
     img_meta.update({'nodata':'0'})
 
+    # Write out infilled file
     print('Writing out to {}'.format(infilled_stack))
     with rasterio.open(infilled_stack, 'w', **img_meta) as img_out:
         img_out.write(img_array)
 
 def missing_vals_infill(stacked_array):
 
+    # For a 10m resolution image, this is the longest step in the process.
+
+
     num_imgs = stacked_array.shape[0]
 
     for ix in range(stacked_array.shape[0]):
+        # Find missing indices, where either a 0 or a np.nan exists
         missing_indices = np.logical_or(np.isnan(stacked_array[ix]),  stacked_array[ix] <= 200)
 
         (missing_x, missing_y) = np.where(missing_indices)
@@ -277,6 +307,8 @@ def missing_vals_infill(stacked_array):
 
             full_stack = stacked_array[:, row, col]
             # print(full_stack)
+
+            # Interpolate depthwise based on the the nearest pixels (before and after) that have valid data
             if (np.count_nonzero(full_stack == 0) + np.count_nonzero(np.isnan(full_stack))) < 0.7*len(full_stack):
 
                 while np.isnan(stacked_array[interp_left, row, col]) or stacked_array[interp_left, row, col] == 0:
@@ -291,11 +323,11 @@ def missing_vals_infill(stacked_array):
                 else:
                     indices = np.arange(interp_left+1, interp_right)
 
-
+                # Find the data values at the same row, col, but at the correct layers
                 interp_left_value = stacked_array[interp_left, row, col]
                 interp_right_value = stacked_array[interp_right, row, col]
 
-                # print(interp_left_value, interp_right_value)
+                # Interpolate
                 interp_values = np.interp(range(0, len(indices)), [-1, len(indices)],
                                           [interp_left_value, interp_right_value])
 

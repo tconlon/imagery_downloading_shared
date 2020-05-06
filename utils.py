@@ -3,39 +3,39 @@ import pandas as pd
 import os
 from google.cloud import storage
 import pickle
-from rasterio import Affine
 from dateutil.rrule import rrule, MONTHLY
 
 
 # Utility functions
 def trim_index_csv():
-    index_csv = pd.read_csv('/Volumes/Conlon Backup 2TB/GCP Sentinel Hosting/index.csv')
-    index_csv_usa = index_csv[(index_csv['NORTH_LAT'] <= 15) &
+    index_csv = pd.read_csv('/Volumes/sel_external/GCP Sentinel Hosting/index.csv')
+    index_csv_trimmed = index_csv[(index_csv['NORTH_LAT'] <= 15) &
                               (index_csv['SOUTH_LAT'] >= 3) &
                               (index_csv['WEST_LON'] >= 32) &
                               (index_csv['EAST_LON'] <= 48) &
                               (index_csv['GEOMETRIC_QUALITY_FLAG'] != 'FAILED') &
                               (index_csv['CLOUD_COVER'] <= 30)]
-    index_csv_usa.to_csv('/Volumes/Conlon Backup 2TB/GCP Sentinel Hosting/index_eth_only.csv')
+    index_csv_trimmed.to_csv('/Volumes/sel_external/GCP Sentinel Hosting/index_eth_only.csv')
 
 def find_images(tile):
-    index_csv = pd.read_csv('/Volumes/sel_external/GCP Sentinel Hosting/index_eth_only.csv')
 
-    gs_storage_list = []
+    # Read in index file containing sentinel image information for the region of interest
+    index_csv = pd.read_csv('/Volumes/sel_external/GCP Sentinel Hosting/index_eth_only.csv')
     save_file = os.path.join('/Volumes/sel_external/sentinel_imagery/gcp_sentinel_imagery_utils/image_lists',
                                     'image_lists_by_tile', 'ethiopia', 'valid_tiles_{}.pkl'.format(tile))
 
 
     tile_dict = {}
-
     tile_name = tile[1::]
+
+    # Find valid images covering the tile in question and with a majority of pixels covered by data
     valid_images = index_csv.loc[(index_csv['MGRS_TILE'] == tile_name) & (index_csv['TOTAL_SIZE'] > 750000000)]
 
     for index, row in valid_images.iterrows():
         if row['GRANULE_ID'][0:3] != 'L1C':
             valid_images = valid_images.drop(index)
 
-    # Create dict
+    # Create dict to store information for valid images
     for i in range(len(valid_images)):
         sensing_time = valid_images['SENSING_TIME'].iloc[i].split('-')
         year, month = sensing_time[0:2]
@@ -49,23 +49,25 @@ def find_images(tile):
         else:
             tile_dict[ym_tuple].append(image_info)
 
-    # Sort dict
+    # Sort dict based on cloud cover
     for key in tile_dict.keys():
         tile_dict[key] = sorted(tile_dict[key], key= lambda x: (x[0], np.abs(int(x[3])-15)))
 
 
-
+    # Save dict for future reference
     with open(save_file, 'wb') as f:
         pickle.dump(tile_dict, f)
 
 def load_images_within_date_range(tile, strt_dt, end_dt):
 
+    # Create list of tuples containing year, month info for the date range
     date_tuples = [(dt.year, dt.month) for dt in rrule(MONTHLY, dtstart=strt_dt, until=end_dt)]
 
+    # Create two lists for containing valid images and corrupted images (corrupted images may no longer be an issue?)
     image_list = []
-
     corrupted_images = []
 
+    # Find list of all images covering the tile in question, pull only those that correspond to the date
     save_file = os.path.join('/Volumes/sel_external/sentinel_imagery/gcp_sentinel_imagery_utils/image_lists',
                              'image_lists_by_tile', 'ethiopia', 'valid_tiles_{}.pkl'.format(tile))
 
@@ -89,13 +91,12 @@ def load_images_within_date_range(tile, strt_dt, end_dt):
 
 def create_dirs(save_dir_base, tile_name, year, month, valid_bands):
 
+    # Create directories to store images and cloud cover shapefile
     folder_level_1 = os.path.join(save_dir_base, tile_name)
     folder_level_2 = os.path.join(folder_level_1, year)
     folder_level_3 = os.path.join(folder_level_2, month)
     folder_level_cloud = os.path.join(folder_level_3, 'cloud_cover')
 
-    for band in valid_bands:
-        folder_level_band = os.path.join(folder_level_3, band)
 
     if not os.path.isdir(folder_level_1):
         os.mkdir(folder_level_1)
@@ -114,6 +115,8 @@ def create_dirs(save_dir_base, tile_name, year, month, valid_bands):
 
 def download_blob(bucket_name, source_blob_name, destination_file_name):
     """Downloads a blob from the bucket."""
+    # Uses the Google cloud storage API
+
     # bucket_name = "your-bucket-name"
     # source_blob_name = "storage-object-name"
     # destination_file_name = "local/path/to/file"
@@ -132,6 +135,8 @@ def download_blob(bucket_name, source_blob_name, destination_file_name):
 
 def upload_blob(bucket_name, source_file_name, destination_blob_name):
     """Uploads a file to the bucket."""
+    # Uses the Google cloud storage API
+
     # bucket_name = "your-bucket-name"
     # source_file_name = "local/path/to/file"
     # destination_blob_name = "storage-object-name"
@@ -150,7 +155,7 @@ def upload_blob(bucket_name, source_file_name, destination_blob_name):
 
 def list_folders(tile_name):
 
-
+    # List folders to search for imagery
     base_dir = os.path.join('/Volumes/sel_external/sentinel_imagery/reprojected_tiles', tile_name)
     dirs = [x[0] for x in os.walk(base_dir)]
 
