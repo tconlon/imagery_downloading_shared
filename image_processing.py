@@ -24,15 +24,18 @@ def download_images_and_cloud_masks(gs_tuple):
     valid_bands = ['B02', 'B03', 'B04', 'B08']
 
     # Find a list of images that are available within the image folder
-    cmd_string = '/Users/terenceconlon/google-cloud-sdk/bin/gsutil ls -r ' + gs_tuple[-1] + '/GRANULE'
-    image_list_output = subprocess.Popen(cmd_string, shell=True, stdout=subprocess.PIPE)
-    image_list_clean = [j.decode('utf-8') for j in image_list_output.stdout.readlines()]
-    image_list_output.kill()
+    storage_client = storage.Client()
+    bucket_name = 'gcp-public-data-sentinel-2'
+
+    img_folder_prefix = gs_tuple[-1].split(bucket_name)[-1][1::]
+    blobs = storage_client.list_blobs(bucket_name, prefix=img_folder_prefix)
+    blobs_names = [j.name for j in blobs]
 
     # Collect the valid images and cloud cover shape files
-    jp2_list = sorted([j.replace('\n', '') for j in image_list_clean if '.jp2' in j])
+    jp2_list = sorted([j for j in blobs_names if '.jp2' in j])
     jp2_band_list = sorted([i for i in jp2_list if i.split('_')[-1][0:3] in valid_bands])
-    cloud_cover_gml = [j.replace('\n', '') for j in image_list_clean if 'CLOUDS' in j][0]
+    cloud_cover_gml = [j for j in blobs_names if 'CLOUDS' in j]
+
 
     # Extract temporal information
     year = jp2_band_list[0].split('_')[-2][0:4]
@@ -42,33 +45,27 @@ def download_images_and_cloud_masks(gs_tuple):
     # Create directories to store the imagery/cloud cover shapefile
     dir_folder, cloud_folder = create_dirs(tile_folder_base, tile_name, year, month, valid_bands)
 
-    bucket_name = 'gcp-public-data-sentinel-2'
-    dest_filename_list = []
-
-
     print('Downloading images')
     for img in jp2_band_list:
-        in_filename = img.split(bucket_name)[-1][1::]
 
         band_dir = img.split('_')[-1].replace('.jp2', '')
         out_filename = img.split('/')[-1].replace('.jp2', '.tif')
         dest = os.path.join(dir_folder, band_dir, out_filename)
-        dest_filename_list.append(dest)
 
         # Download images to corresponding folders.
         # Note: this download process changes the file extension from .jp2 to .tif
-        download_blob(bucket_name, in_filename, dest)
+        download_blob(bucket_name, img, dest)
 
 
     print('Downloading cloud cover')
-    cloud_infile_name = cloud_cover_gml.split(bucket_name)[-1][1::]
-
-    cloud_dest = os.path.join(cloud_folder,
+    if len(cloud_cover_gml) > 0:
+        cloud_cover_file = cloud_cover_gml[0]
+        cloud_dest = os.path.join(cloud_folder,
                               'cloud_cover_polygons_{}{}{}.shp'.format(year, month, day))
 
-    # Download cloud cover shapefile to corresponding folder.
-    # Note: this download process changes the file extension from .gml to .shp
-    download_blob(bucket_name, cloud_infile_name, cloud_dest)
+        # Download cloud cover shapefile to corresponding folder.
+        # Note: this download process changes the file extension from .gml to .shp
+        download_blob(bucket_name, cloud_cover_file, cloud_dest)
 
 
 def create_evi_imgs(tile_name):

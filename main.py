@@ -10,15 +10,15 @@ fiona.drvsupport.supported_drivers['GML'] = 'rw'
 
 
 if __name__ == '__main__':
-    tile = 'T37PCM'
+    tile = 'T37PEK'
 
-    download_raw_imagery = False
+    download_raw_imagery = True
     create_evi_imagery   = False
     stack_imagery        = False
     downsample_imagery   = False
     infill_imagery       = False
 
-    upload_imagery = True
+    upload_imagery = False
 
 
 
