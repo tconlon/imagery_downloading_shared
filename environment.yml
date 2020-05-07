@@ -6,6 +6,7 @@ dependencies:
 - python=3.6
 - matplotlib
 - rasterio
+#- gdal
 - numpy
 - shapely
 - fiona
@@ -18,4 +19,7 @@ dependencies:
 - seaborn
 - scikit-learn
 - google-cloud-storage
+- cvxopt
 
+- pip:
+    - pysptools

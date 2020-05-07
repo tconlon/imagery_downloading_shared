@@ -16,9 +16,9 @@ if __name__ == '__main__':
     create_evi_imagery   = False
     stack_imagery        = False
     downsample_imagery   = False
-    infill_imagery       = True
+    infill_imagery       = False
 
-    upload_imagery = False
+    upload_imagery = True
 
 
 
@@ -62,11 +62,9 @@ if __name__ == '__main__':
         # In command line, may need to run: gcloud config set core/project qsel-columbia
 
         bucket_name = 'sentinel_imagery_useast'
-        source_file_name = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles/' \
-                           'T37PCM/2017/02/B02/T37PCM_20170201T075131_B02.tif'
-        # source_file_name = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles/T37PCM/2018/02/' \
-        #                    'cloud_cover/cloud_cover_polygons_20180216.shp'
+        source_file_name = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles/T37PCM/stacks/' \
+                           'T37PCM_stack_EVI_100m_infilled.tif'
+        destination_blob_name = 'ethiopia/T37PCM_stack_EVI_100m_infilled.tif'
+        # destination_blob_name = source_file_name.split('reprojected_tiles')[-1]
 
-        destination_blob_name = source_file_name.split('reprojected_tiles')[-1]
-
-        upload_blob(bucket_name, source_file_name, destination_blob_name)
+        resumable_upload_blob(bucket_name, source_file_name, destination_blob_name)

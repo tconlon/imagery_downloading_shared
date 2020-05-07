@@ -4,7 +4,7 @@ import os
 from google.cloud import storage
 import pickle
 from dateutil.rrule import rrule, MONTHLY
-
+from resumable_uploads import *
 
 # Utility functions
 def trim_index_csv():
@@ -152,6 +152,15 @@ def upload_blob(bucket_name, source_file_name, destination_blob_name):
             source_file_name, destination_blob_name
         )
     )
+
+def resumable_upload_blob(bucket_name, source_file_name, destination_blob_name):
+
+    client = storage.Client()
+    print('Sending file: {}'.format(source_file_name))
+    with GCSObjectStreamUpload(client=client, bucket_name=bucket_name,
+                               blob_name=destination_blob_name) as s:
+        cur_data = io.BytesIO(open(source_file_name, 'rb').read()).read()
+        s.write(cur_data)
 
 def list_folders(tile_name):
 
