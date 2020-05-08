@@ -4,26 +4,27 @@ import datetime
 
 os.environ['GDAL_DATA'] = '/anaconda3/envs/gis/share/gdal'
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/Users/terenceconlon/Google Authentication/qsel-columbia-37d91db96bb8.json'
-fiona.drvsupport.supported_drivers['gml'] = 'rw'
-fiona.drvsupport.supported_drivers['GML'] = 'rw'
+# fiona.drvsupport.supported_drivers['gml'] = 'rw'
+# fiona.drvsupport.supported_drivers['GML'] = 'rw'
 
 
 
 if __name__ == '__main__':
+
     tile = 'T37PEK'
 
-    download_raw_imagery = True
+    download_raw_imagery = False
     create_evi_imagery   = False
     stack_imagery        = False
     downsample_imagery   = False
     infill_imagery       = False
 
-    upload_imagery = False
+    upload_imagery = True
 
 
 
     strt_dt = datetime.date(2017, 1, 1)
-    end_dt = datetime.date(2019, 12, 1)
+    end_dt  = datetime.date(2019, 12, 1)
 
 
     if download_raw_imagery:
@@ -63,8 +64,13 @@ if __name__ == '__main__':
 
         bucket_name = 'sentinel_imagery_useast'
         source_file_name = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles/T37PCM/stacks/' \
-                           'T37PCM_stack_EVI_100m_infilled.tif'
-        destination_blob_name = 'ethiopia/T37PCM_stack_EVI_100m_infilled.tif'
-        # destination_blob_name = source_file_name.split('reprojected_tiles')[-1]
+                           'T37PCM_stack_EVI_10m_infilled.tif'
+
+        # source_file_name = '/Users/terenceconlon/Documents/Columbia - Spring 2020/personal/lebron.jpg'
+
+        # source_file_name = glob.glob('/Volumes/sel_external/sentinel_imagery/reprojected_tiles/{}/stacks/'
+        #                              '{}_*_100m_infilled.tif'.format(tile, tile))
+
+        destination_blob_name = os.path.join('ethiopia', source_file_name.split('/')[-1])
 
         resumable_upload_blob(bucket_name, source_file_name, destination_blob_name)

@@ -8,6 +8,8 @@ from google.resumable_media import requests, common
 from google.cloud import storage
 import io, os
 from tqdm import tqdm
+import hashlib
+import functools
 
 
 os.environ['GDAL_DATA'] = '/anaconda3/envs/gis/share/gdal'
@@ -67,12 +69,12 @@ class GCSObjectStreamUpload(object):
         self._buffer_size += data_len
         self._buffer += data
         del data
-        pbar = tqdm(total=data_len)
+        # pbar = tqdm(total=data_len)
 
         while self._buffer_size >= self._chunk_size:
             try:
                 self._request.transmit_next_chunk(self._transport)
-                pbar.update(self._chunk_size)
+                # pbar.update(self._chunk_size)
             except common.InvalidResponse:
                 self._request.recover(self._transport)
         return data_len
@@ -92,15 +94,31 @@ class GCSObjectStreamUpload(object):
 
 
 # if __name__ == '__main__':
-#     client = storage.Client()
+#
 #     bucket_name = 'sentinel_imagery_useast'
-#     source_file_name = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles/T37PCM/stacks/T37PCM_stack_EVI_100m_infilled.tif'
-#     destination_blob_name = 'ethiopia/T37PCM_stack_EVI_100m_infilled.tif'
+#     source_file_name = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles/T37PCM/stacks/' \
+#                        'T37PCM_stack_EVI_10m_infilled.tif'
 #
+#     # source_file_name = '/Users/terenceconlon/Documents/Columbia - Spring 2020/personal/lebron.jpg'
 #
+#     # source_file_name = glob.glob('/Volumes/sel_external/sentinel_imagery/reprojected_tiles/{}/stacks/'
+#     #                              '{}_*_100m_infilled.tif'.format(tile, tile))
+#
+#     destination_blob_name = os.path.join('ethiopia', source_file_name.split('/')[-1])
+#
+#     client = storage.Client()
 #     print('Sending file: {}'.format(source_file_name))
 #     with GCSObjectStreamUpload(client=client, bucket_name=bucket_name,
 #                                blob_name=destination_blob_name) as s:
-#         cur_data = io.BytesIO(open(source_file_name, 'rb').read()).read()
-#         s.write(cur_data)
+#
+#         size = os.stat(source_file_name).st_size
+#         print('Size of upload: {} MB'.format(size/1e6))
+#         with open(source_file_name, 'rb') as infile:
+#             pbar = tqdm(total=size)
+#             for f in infile:
+#                 data = io.BytesIO(f).read()
+#                 pbar.update(len(data))
+#                 s.write(data)
+
+
 

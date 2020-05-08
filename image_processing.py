@@ -113,22 +113,33 @@ def create_evi_imgs(tile_name):
 
             # Read in the images for bands 2,4,8 to create an EVI layer. Crop out the cloud covered pixels
             with rasterio.open(band_02_images[i], 'r') as band2_src:
+
                 evi_meta = copy.copy(band2_src.meta)
 
                 with rasterio.open(band_04_images[i], 'r') as band4_src:
                     with rasterio.open(band_08_images[i], 'r') as band8_src:
                         if len(cloud_cover_shp_name) == 1:
+
+                            print(cloud_cover_shp_name)
                             print('Cloud mask present')
-                            cc_mask = fiona.open(cloud_cover_shp_name[0])
-                            cc_mask_list = [cc_mask[i]['geometry'] for i in range(len(cc_mask))]
 
-                            band_02_cropped, _ = mask(band2_src, cc_mask_list, invert=True, nodata=nodata_val)
-                            band_04_cropped, _ = mask(band4_src, cc_mask_list, invert=True, nodata=nodata_val)
-                            band_08_cropped, _ = mask(band8_src, cc_mask_list, invert=True, nodata=nodata_val)
+                            # Need to change this for locations where there is no cloud mask
+                            try:
+                                cc_mask = fiona.open(cloud_cover_shp_name[0])
+                                cc_mask_list = [cc_mask[i]['geometry'] for i in range(len(cc_mask))]
 
-                            assert band_02_cropped.shape == band_04_cropped.shape and band_08_cropped.shape ==\
-                                band_08_cropped.shape
+                                band_02_cropped, _ = mask(band2_src, cc_mask_list, invert=True, nodata=nodata_val)
+                                band_04_cropped, _ = mask(band4_src, cc_mask_list, invert=True, nodata=nodata_val)
+                                band_08_cropped, _ = mask(band8_src, cc_mask_list, invert=True, nodata=nodata_val)
 
+                                assert band_02_cropped.shape == band_04_cropped.shape and band_08_cropped.shape ==\
+                                    band_08_cropped.shape
+
+                            except Exception as e:
+                                print('Empty cloud layer')
+                                band_02_cropped = band2_src.read()
+                                band_04_cropped = band4_src.read()
+                                band_08_cropped = band8_src.read()
 
                         else:
                             print('No cloud mask present')
