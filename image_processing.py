@@ -8,12 +8,12 @@ import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from utils import *
 
-def download_images_and_cloud_masks(gs_tuple):
+def download_images_and_cloud_masks(local_image_dir, gs_tuple):
     # gs_tuple contains information about the image url, the image size, cloud cover, and the ingestion date
 
     tile_name = gs_tuple[-1].split('_')[-2]
-    tile_folder_base = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles'
-    tile_folder = os.path.join(tile_folder_base, tile_name)
+    # parent_dir = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles'
+    tile_folder = os.path.join(local_image_dir, tile_name)
 
     if not os.path.exists(tile_folder):
         os.mkdir(tile_folder)
@@ -43,7 +43,7 @@ def download_images_and_cloud_masks(gs_tuple):
     day = jp2_band_list[0].split('_')[-2][6:8]
 
     # Create directories to store the imagery/cloud cover shapefile
-    dir_folder, cloud_folder = create_dirs(tile_folder_base, tile_name, year, month, valid_bands)
+    dir_folder, cloud_folder = create_dirs(local_image_dir, tile_name, year, month, valid_bands)
 
     print('Downloading images')
     for img in jp2_band_list:
@@ -68,13 +68,13 @@ def download_images_and_cloud_masks(gs_tuple):
         download_blob(bucket_name, cloud_cover_file, cloud_dest)
 
 
-def create_evi_imgs(tile_name):
+def create_evi_imgs(local_image_dir, tile_name):
 
 
     nodata_val = 32767
 
     # Extract folders for the tile
-    year_dirs, month_dirs, band_dirs = list_folders(tile_name)
+    year_dirs, month_dirs, band_dirs = list_folders(local_image_dir, tile_name)
 
 
     for dir in month_dirs:
@@ -202,13 +202,13 @@ def convert_to_float_and_evi_func(band_02_array, band_04_array, band_08_array, n
     return EVI
 
 
-def stack_images(tile_name, band_name, strt_dt, end_dt):
+def stack_images(local_image_dir, tile_name, band_name, strt_dt, end_dt):
 
     # Find all year, month pairs in the date range
     date_tuples = [(dt.year, dt.month) for dt in rrule(MONTHLY, dtstart=strt_dt, until=end_dt)]
 
     # Create a folder to hold the stacked images
-    median_img_folder = os.path.join('/Volumes/sel_external/sentinel_imagery/reprojected_tiles/',tile_name)
+    median_img_folder = os.path.join(local_image_dir, tile_name)
     stacks_folder = os.path.join(median_img_folder, 'stacks')
     if not os.path.exists(stacks_folder):
         os.mkdir(stacks_folder)

@@ -5,27 +5,35 @@ from google.cloud import storage
 import pickle
 from dateutil.rrule import rrule, MONTHLY
 from resumable_uploads import *
-import hashlib
-import functools
+
 
 # Utility functions
-def trim_index_csv():
-    index_csv = pd.read_csv('/Volumes/sel_external/GCP Sentinel Hosting/index.csv')
+def trim_index_csv(local_utils_dir):
+    # Index.csv (downloaded from https://cloud.google.com/storage/docs/public-datasets/sentinel-2) needs to be placed
+    # in the local_utils_dir folder. Clip the > 4GB csv to a smaller geographic extent using the following function.
+    # Name accordingly
+
+    index_csv = pd.read_csv(os.path.join(local_utils_dir, 'index.csv'))
     index_csv_trimmed = index_csv[(index_csv['NORTH_LAT'] <= 15) &
                               (index_csv['SOUTH_LAT'] >= 3) &
                               (index_csv['WEST_LON'] >= 32) &
                               (index_csv['EAST_LON'] <= 48) &
                               (index_csv['GEOMETRIC_QUALITY_FLAG'] != 'FAILED') &
                               (index_csv['CLOUD_COVER'] <= 30)]
-    index_csv_trimmed.to_csv('/Volumes/sel_external/GCP Sentinel Hosting/index_eth_only.csv')
+    index_csv_trimmed.to_csv(os.path.join(local_utils_dir, 'index_eth_only.csv'))
 
-def find_images(tile):
+def find_images(local_utils_dir, tile):
 
     # Read in index file containing sentinel image information for the region of interest
-    index_csv = pd.read_csv('/Volumes/sel_external/GCP Sentinel Hosting/index_eth_only.csv')
-    save_file = os.path.join('/Volumes/sel_external/sentinel_imagery/gcp_sentinel_imagery_utils/image_lists',
-                                    'image_lists_by_tile', 'ethiopia', 'valid_tiles_{}.pkl'.format(tile))
+    # The file should be in local_utils_dir and have the name given to it from the trim_index_csv function.
 
+    index_csv = pd.read_csv(os.path.join(local_utils_dir, 'index_eth_only.csv'))
+    save_dir = os.path.join(local_utils_dir, 'image_lists_by_tile')
+
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
+
+    save_file = os.path.join(save_dir, 'valid_tiles_{}.pkl'.format(tile))
 
     tile_dict = {}
     tile_name = tile[1::]
@@ -60,7 +68,7 @@ def find_images(tile):
     with open(save_file, 'wb') as f:
         pickle.dump(tile_dict, f)
 
-def load_images_within_date_range(tile, strt_dt, end_dt):
+def load_images_within_date_range(local_utils_dir, tile, strt_dt, end_dt):
 
     # Create list of tuples containing year, month info for the date range
     date_tuples = [(dt.year, dt.month) for dt in rrule(MONTHLY, dtstart=strt_dt, until=end_dt)]
@@ -70,10 +78,9 @@ def load_images_within_date_range(tile, strt_dt, end_dt):
     corrupted_images = []
 
     # Find list of all images covering the tile in question, pull only those that correspond to the date
-    save_file = os.path.join('/Volumes/sel_external/sentinel_imagery/gcp_sentinel_imagery_utils/image_lists',
-                             'image_lists_by_tile', 'ethiopia', 'valid_tiles_{}.pkl'.format(tile))
+    in_file = os.path.join(local_utils_dir, 'image_lists_by_tile', 'valid_tiles_{}.pkl'.format(tile))
 
-    with open(save_file, 'rb') as f:
+    with open(in_file, 'rb') as f:
         tile_dict = pickle.load(f)
 
     for key in tile_dict.keys():
@@ -173,10 +180,10 @@ def resumable_upload_blob(bucket_name, source_file_name, destination_blob_name):
                 pbar.update(len(data))
                 s.write(data)
 
-def list_folders(tile_name):
+def list_folders(local_image_dir, tile_name):
 
     # List folders to search for imagery
-    base_dir = os.path.join('/Volumes/sel_external/sentinel_imagery/reprojected_tiles', tile_name)
+    base_dir = os.path.join(local_image_dir, tile_name)
     dirs = [x[0] for x in os.walk(base_dir)]
 
     year_dirs = []
