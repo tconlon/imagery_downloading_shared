@@ -203,3 +203,5 @@ def list_folders(local_image_dir, tile_name):
     return year_dirs, month_dirs, band_dirs
 
 
+
+

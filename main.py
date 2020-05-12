@@ -7,20 +7,30 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/Users/terenceconlon/Google Auth
 # fiona.drvsupport.supported_drivers['gml'] = 'rw'
 # fiona.drvsupport.supported_drivers['GML'] = 'rw'
 
-global parent_dir
+
+def parallel_download(image_list):
+    local_image_dir = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles/'
+
+    try:
+        download_images_and_cloud_masks(local_image_dir, image_list)
+
+    except Exception as e:
+        print(e)
+
+
 
 if __name__ == '__main__':
 
-    tile = 'T37PCM'
-    ## These file directories need to be changed by the user
+    tile = 'T37NEJ'
+    ## These file directories need to be changed by the user.
     local_image_dir = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles/'
     local_utils_dir = '/Volumes/sel_external/sentinel_imagery/image_utils/'
 
-    download_raw_imagery = False
+    download_raw_imagery = True
     create_evi_imagery   = False
     stack_imagery        = False
     downsample_imagery   = False
-    infill_imagery       = True
+    infill_imagery       = False
 
     upload_imagery = False
 
@@ -73,3 +83,14 @@ if __name__ == '__main__':
         destination_blob_name = os.path.join('ethiopia', source_file_name.split('/')[-1])
 
         resumable_upload_blob(bucket_name, source_file_name, destination_blob_name)
+
+
+    # The following lines of code allow for parallel processing
+    # You will need to link the threadpool.map call to the function you want to run in parallel
+    #
+
+    # parallel = True
+    # if parallel:
+    #     parallelism = 1  # Try with 4 to see if it crashes; 6 is too high
+    #     thread_pool = ThreadPool(parallelism)
+    #     thread_pool.map(parallel_download, image_list)
