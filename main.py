@@ -1,5 +1,6 @@
 from image_processing import *
 import datetime
+import time
 
 # These environmental variables need to be changed by the user
 os.environ['GDAL_DATA'] = '/anaconda3/envs/gis/share/gdal'
@@ -26,7 +27,7 @@ if __name__ == '__main__':
     local_image_dir = '/Volumes/sel_external/sentinel_imagery/reprojected_tiles/'
     local_utils_dir = '/Volumes/sel_external/sentinel_imagery/image_utils/'
 
-    download_raw_imagery = True
+    download_raw_imagery = False
     create_evi_imagery   = False
     stack_imagery        = False
     downsample_imagery   = False
@@ -39,6 +40,7 @@ if __name__ == '__main__':
     strt_dt = datetime.date(2017, 1, 1)
     end_dt  = datetime.date(2019, 12, 1)
 
+    t = time.time()
 
     if download_raw_imagery:
         find_images(local_utils_dir, tile)
@@ -51,6 +53,8 @@ if __name__ == '__main__':
         for image_tuple in image_list:
             download_images_and_cloud_masks(local_image_dir, image_tuple)
 
+    elapsed = time.time() - t
+    print('Elapsed time: {}s'.format(elapsed))
 
     if create_evi_imagery:
         create_evi_imgs(local_image_dir, tile)
