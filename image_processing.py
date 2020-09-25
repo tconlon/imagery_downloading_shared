@@ -7,6 +7,9 @@ from rasterio import Affine
 import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 from utils import *
+from tqdm import tqdm
+from scipy.interpolate import interp1d
+
 
 def download_images_and_cloud_masks(local_image_dir, gs_tuple):
     # gs_tuple contains information about the image url, the image size, cloud cover, and the ingestion date
@@ -222,8 +225,10 @@ def stack_images(local_image_dir, tile_name, band_name, strt_dt, end_dt):
     out_file = os.path.join(stacks_folder, '{}_stack_{}_10m.tif'.format(
                 tile_name, band_name))
 
+    nodata_val = -3000
+
     # Create a empty array to store stacked image
-    stacked_evi = np.full((36, 10980, 10980), np.nan, dtype=np.float32)
+    stacked_evi = np.full((36, 10980, 10980), np.nan, dtype=np.int16)
 
     for tif in all_tifs:
         with rasterio.open(tif, 'r') as evi_src:
@@ -238,14 +243,17 @@ def stack_images(local_image_dir, tile_name, band_name, strt_dt, end_dt):
             print(tif)
             print(index)
 
+            evi_img = evi_src.read()
+            evi_img[np.isnan(evi_img)] = nodata_val
 
-            stacked_evi[index, :, :] = evi_src.read()
+            stacked_evi[index, :, :] = evi_img.astype(np.int16)
 
     # Save stacked image
     print('Writing stacked image')
     meta = evi_src.meta.copy()
+    meta['dtype'] = 'int16'
     meta['count'] = 36
-    meta['nodata'] = 'nan'
+    meta['nodata'] = nodata_val
     with rasterio.open(out_file, 'w', **meta) as out_img:
         out_img.write(stacked_evi)
 
@@ -272,7 +280,6 @@ def downsample_stack(in_file, ds_factor):
 
 def infill_change_dtype(in_file):
 
-
     infilled_stack = in_file.replace('.tif', '_infilled.tif')
 
     print('Loading {}'.format(in_file))
@@ -281,70 +288,53 @@ def infill_change_dtype(in_file):
         img_array = img_src.read()
         print('Infilling')
         # Call infilling function
-        img_array = missing_vals_infill(img_array)
+        img_array = missing_vals_infill(img_array, img_meta)
 
     # Change data type to take up less storage
-    img_array = img_array.astype(np.uint16)
-    img_meta.update({'dtype':'uint16'})
-    img_meta.update({'nodata':'0'})
+    img_array = img_array.astype(np.int16)
+    img_meta.update({'dtype':'int16'})
+    img_meta.update({'nodata':'-3000'})
 
     # Write out infilled file
     print('Writing out to {}'.format(infilled_stack))
     with rasterio.open(infilled_stack, 'w', **img_meta) as img_out:
         img_out.write(img_array)
 
-def missing_vals_infill(stacked_array):
+def missing_vals_infill(stacked_array, img_meta):
 
     # For a 10m resolution image, this is the longest step in the process.
 
+    # Transpose
+    stacked_array = np.transpose(stacked_array, (1, 2, 0))
 
-    num_imgs = stacked_array.shape[0]
+    # Find missing values for all of stacked_array
+    print('Find missing indices')
+    missing_indices_row_col = np.argwhere(stacked_array == img_meta['nodata'])[:, :-1]
 
-    for ix in range(stacked_array.shape[0]):
-        # Find missing indices, where either a 0 or a np.nan exists
-        missing_indices = np.logical_or(np.isnan(stacked_array[ix]),  stacked_array[ix] <= 200)
+    print('Unique missing row + col combos')
+    # Find unique row col combos that are not out of bounds
+    unique_missing_row_col_combos = np.unique(missing_indices_row_col, axis = 0)
 
-        (missing_x, missing_y) = np.where(missing_indices)
+    print('Interpolate')
+    for ix in tqdm(range(unique_missing_row_col_combos.shape[0])):
+        row = unique_missing_row_col_combos[ix][0]
+        col = unique_missing_row_col_combos[ix][1]
+        valid_timesteps = np.argwhere(stacked_array[row, col] != img_meta['nodata']).flatten()
 
-        print('Layer: {}; missing values: {}'.format(ix, np.count_nonzero(missing_indices)))
+        # Find row and cols of stacked array where more than 0.7 of the array is valid data
+        valid_data_frac = 0.5
 
-        for index in range(len(missing_x)):
-            row, col = missing_x[index], missing_y[index]
-            interp_left = ix
-            interp_right = ix
+        if len(valid_timesteps) >= valid_data_frac * stacked_array.shape[-1]:
+            # Only interpolate
+            f = interp1d(valid_timesteps, stacked_array[row, col][valid_timesteps], kind='linear', fill_value='extrapolate')
+            stacked_array[row, col] = f(range(stacked_array.shape[-1]))
 
-            full_stack = stacked_array[:, row, col]
-            # print(full_stack)
+        else:
+            stacked_array[row,col] = img_meta['nodata']
 
-            # Interpolate depthwise based on the the nearest pixels (before and after) that have valid data
-            if (np.count_nonzero(full_stack == 0) + np.count_nonzero(np.isnan(full_stack))) < 0.7*len(full_stack):
-
-                while np.isnan(stacked_array[interp_left, row, col]) or stacked_array[interp_left, row, col] == 0:
-                    interp_left = np.mod(interp_left + num_imgs - 1, num_imgs)
-
-                while np.isnan(stacked_array[interp_right, row, col]) or stacked_array[interp_left, row, col] == 0:
-                    interp_right += 1
-                    interp_right = np.mod(interp_right, num_imgs)
-
-                if interp_left > interp_right:
-                    indices = np.concatenate((np.arange(interp_left+1, num_imgs), np.arange(0, interp_right)))
-                else:
-                    indices = np.arange(interp_left+1, interp_right)
-
-                # Find the data values at the same row, col, but at the correct layers
-                interp_left_value = stacked_array[interp_left, row, col]
-                interp_right_value = stacked_array[interp_right, row, col]
-
-                # Interpolate
-                interp_values = np.interp(range(0, len(indices)), [-1, len(indices)],
-                                          [interp_left_value, interp_right_value])
-
-                stacked_array[indices, row, col] = interp_values
-
-            else:
-                stacked_array[:, row, col] = 0
 
     print('\nRemaining missing values: {}'.format(np.count_nonzero(np.isnan(stacked_array))))
+    stacked_array = np.transpose(stacked_array, (2, 0, 1))
 
     return stacked_array
 
